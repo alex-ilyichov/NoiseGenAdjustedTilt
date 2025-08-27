@@ -13,3 +13,29 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# --- Android / Gradle ---
+**/build/
+.gradle/
+local.properties
+
+# NDK / CMake
+.cxx/
+.externalNativeBuild/
+
+# Android Studio
+.idea/
+*.iml
+captures/
+
+# OS misc
+.DS_Store
+*.log
+
+# Keystores & signing
+*.jks
+*.keystore
+key.properties
+
+# Misc
+# (оставь gradle wrapper в репозитории!)
