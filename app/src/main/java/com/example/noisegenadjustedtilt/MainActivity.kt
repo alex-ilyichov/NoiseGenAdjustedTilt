@@ -16,18 +16,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.*
 import kotlin.random.Random
 
-/**
- * Вариант 2: спектральный синтез.
- *
- * На каждом шаге создаём комплексный спектр с маской:
- *   |X(f)| = tilt(f) * hp4(f), где tilt(f) = 10^(-4.5*log2(f/1k)/20)
- * Рандомные фазы → IFFT → Hann окно → 50% Overlap-Add (COLA).
- *
- * Без лимитера:
- *   masterGain = min( G_RMS, G_Peak ),
- *   где G_RMS подгоняет RMS под заданный dBFS по Parseval,
- *       G_Peak даёт жёсткий запас по пикам: max|y| < 0 dBFS даже при любой фазе.
- */
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,7 +30,7 @@ fun NoiseScreen() {
     var pan by remember { mutableFloatStateOf(0f) }              // –1..+1
     var decor by remember { mutableFloatStateOf(0f) }
     var tilt by remember { mutableFloatStateOf(-4.5f) }// 0..1
-    var targetDbfs by remember { mutableFloatStateOf(-3.01f) }   // RMS синуса 0 dBFSpeak
+    var targetDbfs by remember { mutableFloatStateOf(-3.01f) }   // RMS of 0 dbFS sine
     var isClamped by remember { mutableStateOf(false) }
 
     val engine = remember { IfftNoiseEngine() }
@@ -100,8 +89,8 @@ fun NoiseScreen() {
     }
 }
 
-/** Реал-тайм генератор: IFFT → Hann окно → 50% overlap-add. */
-/** Реал-тайм генератор: IFFT → √Hann окно → 50% overlap-add, с изменяемым tilt. */
+
+/** Real time generator: IFFT → √Hann window → 50% overlap-add, w varying tilt. */
 class IfftNoiseEngine(
     private val sampleRate: Int = 48_000,
     private val bufferFrames: Int = 1024,
@@ -111,24 +100,24 @@ class IfftNoiseEngine(
     private var track: AudioTrack? = null
     private var thread: Thread? = null
 
-    // управление
+    // controls
     @Volatile private var pan: Float = 0f
     @Volatile private var decor: Float = 0f
-    @Volatile private var tilt: Float = -4.5f          // дБ/окт (относительно 1 кГц, отрицательный — спад)
+    @Volatile private var tilt: Float = -4.5f          // dB/oct downward tilt
 
-    // целевой RMS (линейный) и гейн
+    // target RMS (linear) and gain
     @Volatile private var targetRmsLin: Double = 10.0.pow(-3.01 / 20.0)
     @Volatile private var masterGain: Float = 1f
     @Volatile private var clamped: Boolean = false
 
-    // «смелость» по пиковому запасу (как у тебя было): подбери по вкусу
+    // gain (consider peak headroom), adjust to taste
     private var peakK: Double = 5.999
 
     // RNG
     private val rngL = Random(System.nanoTime())
     private val rngR = Random(System.nanoTime() xor 0x9E3779B97F4A7C15UL.toLong())
 
-    // окно √Hann и OLA
+    // √Hann window and OLA
     private val win = DoubleArray(N) { n -> sqrt(0.5 * (1.0 - cos(2.0 * Math.PI * n / N))) }
     private val hop = N / 2
     private val olaL = FloatArray(N)
@@ -136,20 +125,20 @@ class IfftNoiseEngine(
     private var pos = 0
     private var samplesUntilNewBlock = 0
 
-    // Спектральная маска (амплитуда, 0..Nyquist)
+    // Spectral mask (amplitude, 0..Nyquist)
     private val mag = DoubleArray(N / 2 + 1)
-    private val maskLock = Any()  // защита от гонок при перестройке маски
+    private val maskLock = Any()  // race condition protection at re-shaping
 
-    // FFT буферы
+    // FFT buffers
     private val re = DoubleArray(N)
     private val im = DoubleArray(N)
 
-    // Калибровки (должны пересчитываться при смене tilt)
+    // Refs (should be recalculated at tilt change)
     @Volatile private var rmsBase: Double = 1.0
     @Volatile private var peakBoundBase: Double = 1.0
 
     init {
-        rebuildMaskAndCalibrations()  // первичная маска для стартового tilt
+        rebuildMaskAndCalibrations()  // initial mask for initial tilt
 
         recomputeGain()
     }
@@ -157,20 +146,20 @@ class IfftNoiseEngine(
     fun setPan(value: Float) { pan = value; recomputeGain() }
     fun setDecorrelation(value: Float) { decor = value; recomputeGain() }
 
-    /** Сменить наклон (дБ/окт) и сразу перестроить маску + откалибровать уровень. */
+    /** Change tilt adn rebuild shape + recompute gain. */
     fun setTilt(value: Float) {
         tilt = value
         rebuildMaskAndCalibrations()
         recomputeGain()
     }
 
-    /** Установить целевой RMS (dBFS). */
+    /** Set base RMS (dBFS). */
     fun setTargetRmsDbfs(dbfs: Float): Boolean {
         targetRmsLin = 10.0.pow(dbfs / 20.0)
         return recomputeGain()
     }
 
-    /** Пересчитать итоговый гейн из RMS-цели и пикового ограничения (учёт pan/decor). */
+    /** Recalculate final gain from RMS target and peak limiting (with pan/decor). */
     private fun recomputeGain(): Boolean {
         val gRms = targetRmsLin / rmsBase
 
@@ -180,7 +169,7 @@ class IfftNoiseEngine(
         val gR = sin(theta).toDouble()
         val panScale = max(gL, gR)  // [0.707 … 1.0]
 
-        // учёт декорреляции (худший случай)
+        // Accounting for decor  (worst case)
         val mixFactor = 0.5 + abs(0.5 - decor.toDouble()) // [0.5 … 1.0]
 
         val gPeak = peakK / (peakBoundBase * panScale * mixFactor)
@@ -191,7 +180,7 @@ class IfftNoiseEngine(
         return clamped
     }
 
-    /** Верхняя безопасная граница RMS (для UI, если решишь ограничивать слайдер). */
+    /** Safe top RMS limit (for UI provided you want to limit the slider range). */
     fun maxSafeRmsDbfs(): Float {
         val theta = ((pan + 1f) * 0.5f) * (Math.PI / 2.0).toFloat()
         val panScale = max(cos(theta).toDouble(), sin(theta).toDouble())
@@ -266,7 +255,7 @@ class IfftNoiseEngine(
 
                 val chunk = min(samplesUntilNewBlock, bufferFrames - produced)
 
-                // снимки параметров на чанк
+                // Samples for chunks
                 val mg = masterGain
                 val theta = ((pan + 1f) * 0.5f) * (Math.PI / 2.0).toFloat()
                 val gL = cos(theta); val gR = sin(theta)
@@ -299,7 +288,7 @@ class IfftNoiseEngine(
         }
     }
 
-    // ===== генерация и OLA =====
+    // ===== Generation and OLA =====
     private fun addNewBlock(rng: Random, ola: FloatArray) {
         val half = N / 2
         synchronized(maskLock) {
@@ -308,11 +297,11 @@ class IfftNoiseEngine(
                 val m = mag[k]
                 re[k] = m * cos(phi)
                 im[k] = m * sin(phi)
-                // гермитова симметрия
+                // Hermitian symmetry
                 re[N - k] = re[k]
                 im[N - k] = -im[k]
             }
-            // DC≈0 после HP, Nyquist — действительный
+            // DC≈0 after HP, Nyquist — real
             re[0] = 0.0; im[0] = 0.0
             re[half] = mag[half]; im[half] = 0.0
         }
@@ -328,22 +317,22 @@ class IfftNoiseEngine(
         }
     }
 
-    // ===== перестройка маски и калибровок при смене tilt =====
+    // ===== mask and ref re-shaping at tilt change =====
     private fun rebuildMaskAndCalibrations() {
         val fs = sampleRate.toDouble()
         synchronized(maskLock) {
-            // 1) Маска |X(f)| = tilt * hp4, новая tilt из поля this.tilt
+            // 1) Mask |X(f)| = tilt * hp4, new tilt from this.tilt
             for (k in 0..N/2) {
                 val f = k * fs / N
                 mag[k] = targetAmp(f)
             }
-            // 2) Нормировка на 0 дБ @ 1 кГц
+            // 2) 0 db @ 1 kHz normalization
             val kRef = ((1000.0 / fs) * N).roundToInt().coerceIn(0, N/2)
             val ref = mag[kRef].takeIf { it > 0.0 } ?: 1.0
             val s = 1.0 / ref
             for (k in 0..N/2) mag[k] *= s
 
-            // 3) Пересчёт базовых RMS и пикового лимита
+            // 3) Base RMS and peak limit recalculation
             var sumSq = 0.0
             var sumAbs = 0.0
             for (k in 1 until N/2) {
@@ -357,15 +346,15 @@ class IfftNoiseEngine(
             sumAbs += m0 + mN
 
             val rmsBlock = sqrt(sumSq) / N.toDouble()
-            val avgWinSq = averageWinSqWithOverlap()   // для √Hann+50% ≈ 1.0
+            val avgWinSq = averageWinSqWithOverlap()   // for √Hann+50% ≈ 1.0
             rmsBase = rmsBlock * sqrt(avgWinSq)
 
-            val peakWinSum = peakWinSumWithOverlap()   // максимум суммы перекрытых окон
+            val peakWinSum = peakWinSumWithOverlap()   // peak sum for windows with overlap
             peakBoundBase = (sumAbs / N.toDouble()) * peakWinSum
         }
     }
 
-    // ===== расчёты окна/перекрытия =====
+    // ===== window/overlap calculation =====
     private fun averageWinSqWithOverlap(): Double {
         var s = 0.0
         for (n in 0 until N) {
@@ -384,10 +373,10 @@ class IfftNoiseEngine(
         return m
     }
 
-    // ===== целевая амплитуда =====
+    // ===== target amplitude =====
     private fun targetAmp(f: Double): Double {
         if (f <= 0.0) return 0.0
-        val tiltDb = (tilt) * (ln(f / 1000.0) / ln(2.0))  // дБ/окт относительно 1 кГц
+        val tiltDb = (tilt) * (ln(f / 1000.0) / ln(2.0))  // dB/oct referenced at 1 kHz
         val tiltLin = 10.0.pow(tiltDb / 20.0)
         val hp = hp4Mag(f, 15.0)
         return tiltLin * hp
@@ -395,7 +384,7 @@ class IfftNoiseEngine(
     private fun hp4Mag(f: Double, fc: Double): Double {
         if (f <= 0.0) return 0.0
         val r = fc / f
-        return 1.0 / sqrt(1.0 + r.pow(8.0))  // Баттерворт N=4 по модулю
+        return 1.0 / sqrt(1.0 + r.pow(8.0))  // Butterworth grade N=4
     }
 
     // ===== FFT/IFTT =====
@@ -434,7 +423,7 @@ class IfftNoiseEngine(
                     wRe = nwRe; wIm = nwIm
                 }
             }
-            len = len shl 1   // ← эта строка была пропущена
+            len = len shl 1
         }
         if (inverse) {
             for (i in 0 until n) { re[i] /= n; im[i] /= n }

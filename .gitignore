@@ -38,4 +38,4 @@ captures/
 key.properties
 
 # Misc
-# (оставь gradle wrapper в репозитории!)
+# (gradle wrapper must stay in repo!)

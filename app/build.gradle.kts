@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" // ⚡️ добавь это
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
 }
 
 android {
@@ -23,7 +23,7 @@ android {
     //    kotlinCompilerExtensionVersion = "1.5.14"
     //}
 
-    // (опционально) включить Java 17, если студия попросит
+    // (optional) enable Java 17 if Android Studio orders so
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
