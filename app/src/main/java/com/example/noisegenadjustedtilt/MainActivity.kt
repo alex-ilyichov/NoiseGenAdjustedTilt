@@ -1,4 +1,7 @@
 package com.example.noisegenadjustedtilt
+import androidx.lifecycle.viewmodel.compose.viewModel
+import java.util.Locale
+
 
 
 import android.media.AudioAttributes
@@ -25,66 +28,71 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun NoiseScreen() {
-    var running by remember { mutableStateOf(false) }
-    var pan by remember { mutableFloatStateOf(0f) }              // –1..+1
-    var decor by remember { mutableFloatStateOf(0f) }
-    var tilt by remember { mutableFloatStateOf(-4.5f) }// 0..1
-    var targetDbfs by remember { mutableFloatStateOf(-3.01f) }   // RMS of 0 dbFS sine
-    var isClamped by remember { mutableStateOf(false) }
-
-    val engine = remember { IfftNoiseEngine() }
-
-    LaunchedEffect(running) { if (running) engine.start() else engine.stop() }
-    LaunchedEffect(pan) { engine.setPan(pan) }
-    LaunchedEffect(decor) { engine.setDecorrelation(decor) }
-    LaunchedEffect(tilt) { engine.setTilt(tilt) }
-    LaunchedEffect(targetDbfs) { isClamped = engine.setTargetRmsDbfs(targetDbfs) }
-
+fun NoiseScreen(vm: NoiseViewModel = viewModel()) {
     Surface(Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterVertically),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("This app is a precise spectral-noise generator built with frequency-domain (IFFT) synthesis. Use it as a reference for live sound, audio mixing, room acoustics checks, gear testing, or simply for relaxation.", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "This app is a precise spectral-noise generator built with frequency-domain (IFFT) synthesis. Use it as a reference for live sound, audio mixing, room acoustics checks, gear testing, or simply for relaxation.",
+                style = MaterialTheme.typography.titleMedium
+            )
 
-            Button(onClick = { running = !running }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (running) "Pause" else "Start")
+            Button(onClick = { vm.toggleRunning() }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (vm.running) "Pause" else "Start")
             }
 
             Column(Modifier.fillMaxWidth()) {
-                Text("Panning L/R: ${"%.2f".format(pan)}")
-                Slider(value = pan, onValueChange = { pan = it.coerceIn(-1f, 1f) }, valueRange = -1f..1f)
+                Text("Panning L/R: " + String.format(Locale.US, "%.2f", vm.pan))
+                Slider(
+                    value = vm.pan,
+                    onValueChange = { vm.updatePan(it) },
+                    valueRange = -1f..1f
+                )
             }
 
             Column(Modifier.fillMaxWidth()) {
-                Text("Decorrelation L/R: ${"%.2f".format(decor)}")
-                Slider(value = decor, onValueChange = { decor = it.coerceIn(0f, 1f) }, valueRange = 0f..1f)
+                Text("Decorrelation L/R: " + String.format(Locale.US, "%.2f", vm.decor))
+                Slider(
+                    value = vm.decor,
+                    onValueChange = { vm.updateDecor(it) },
+                    valueRange = 0f..1f
+                )
             }
 
             Column(Modifier.fillMaxWidth()) {
-                Text("Tilt: ${"%.2f".format(tilt)}")
-                Slider(value = tilt, onValueChange = { tilt = it.coerceIn(-6f, 0f) }, valueRange = -6f..0f)
+                Text("Tilt: " + String.format(Locale.US, "%.2f", vm.tilt))
+                Slider(
+                    value = vm.tilt,
+                    onValueChange = { vm.updateTilt(it) },
+                    valueRange = -6f..0f
+                )
             }
 
             Column(Modifier.fillMaxWidth()) {
                 val label = buildString {
-                    append("Target RMS: "); append(String.format("%.1f dBFS", targetDbfs))
-                    if (isClamped) append("  (gain is limited to not clip the signal)")
+                    append("Target RMS: ")
+                    append(String.format(Locale.US, "%.1f dBFS", vm.targetDbfs))
+                    if (vm.isClamped) append("  (gain limited by peak guard)")
                 }
                 Text(label)
                 Slider(
-                    value = targetDbfs,
+                    value = vm.targetDbfs,
                     onValueChange = {
                         val v = (it.coerceIn(-60f, -3.0f) * 10f).roundToInt() / 10f
-                        targetDbfs = v
+                        vm.updateTargetDbfs(v)
                     },
                     valueRange = -60f..-3.0f
                 )
             }
 
-            Text("The generated noise spans 20 Hz–24 kHz, with a user-adjustable linear downward spectral tilt (0–6 dB per octave) and a 15 Hz high-pass filter.")
+            Text(
+                "The generated noise spans 20 Hz–24 kHz, with a user-adjustable linear downward spectral tilt (0–6 dB per octave) and a 15 Hz high-pass filter."
+            )
         }
     }
 }
